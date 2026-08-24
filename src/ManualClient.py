@@ -179,8 +179,10 @@ class ManualContext(SuperContext):
 
         self.send_index: int = 0
         self.syncing = False
-        self.game: str = game
+        self.game = game
         self.username = player_name
+        self.locations_checked: list[int] = []
+        self.locations_scouted: list[int] = []
 
     async def server_auth(self, password_requested: bool = False):
         if password_requested and not self.password:
