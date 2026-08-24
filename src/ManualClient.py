@@ -1273,12 +1273,13 @@ async def game_watcher_manual(ctx: ManualContext):
             ctx.ui.check_for_requested_update()
 
         if ctx.syncing == True:
-            sync_msg = [{'cmd': 'Sync'}]
+            sync_msg = []
             if ctx.locations_checked:
                 ctx.check_locations(ctx.locations_checked)
             if ctx.locations_scouted:
                 sync_msg.append({"cmd": "LocationScouts", "locations": list(ctx.locations_scouted), "create_as_hint": 2})
-            await ctx.send_msgs(sync_msg)
+            if sync_msg:
+                await ctx.send_msgs(sync_msg)
             ctx.syncing = False
 
         if ctx.set_deathlink:
