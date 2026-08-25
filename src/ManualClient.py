@@ -62,7 +62,7 @@ class SortingOrderItem(IntEnum):
 
 # SortingOrderItem.custom.__doc__ = "Sort alphabetically using the custom sorting keys defined in items.json if present, and the name otherwise."
 SortingOrderItem.alphabetical.__doc__ = "Sort alphabetically using the name of item defined in items.json."
-SortingOrderItem.natural.__doc__ = "Sort like custom but makes sure that any number are read as integer and thus sorted naturally. EG. key2 < key12"
+SortingOrderItem.natural.__doc__ = "Sort like alphabetically but makes sure that any number are read as integer and thus sorted naturally. EG. key2 < key12"
 SortingOrderItem.received.__doc__ = "Sort the item in the order they are received from the server"
 
 class SortingOrderCategories(IntEnum):
@@ -250,26 +250,25 @@ class ManualContext(SuperContext):
             category = AutoWorldRegister.world_types[self.game].category_table.get(name, {"name": name}) # type: ignore
         return category
 
-    def get_location_sorting_key_by_id(self, key) -> str:
-        Manual_dict = self.get_location_by_id(key)
+    def get_sorting_key_by_id(self, key, is_item=True) -> str:
+        Manual_dict: Dict[str, str] = self.get_item_by_id(key) if is_item else self.get_location_by_id(key)
         name: str | None = None
-        if self.locations_sorting_uses_sortkeys:
+        if (is_item and self.items_sorting_uses_sortkeys) or \
+            (not is_item and self.locations_sorting_uses_sortkeys):
             name = Manual_dict.get("sort-key")
-        return name if name is not None else Manual_dict["name"]
+        name = Manual_dict["name"] if name is None else name
+        name = strip_articles(name.lower())
+        return name
 
-    def get_item_sorting_key_by_id(self, key) -> str:
-        Manual_dict: Dict[str, Any] = self.get_item_by_id(key)
-        name: str | None = None
-        if self.items_sorting_uses_sortkeys:
-            name = Manual_dict.get("sort-key")
-        return name if name is not None else Manual_dict["name"]
-
-    def get_category_sorting_key_by_name(self, name) -> str:
+    def get_category_sorting_key_by_name(self, name, is_item = True) -> str:
         Manual_dict: Dict[str, Any] = self.get_category_by_name(name)
-        key = None
-        if self.ctx.item_categories_sorting_uses_sortkeys:
+        key: str | None = None
+        if (is_item and self.item_categories_sorting_uses_sortkeys) or\
+            (not is_item and self.location_categories_sorting_uses_sortkeys):
             key = Manual_dict.get("sort-key")
-        return key if key is not None else name
+        key = name if key is None else key
+        key = strip_articles(key.lower())
+        return key
 
     def update_ids(self, data_package) -> None:
         self.location_names_to_id = data_package['location_name_to_id']
@@ -879,7 +878,7 @@ class ManualContext(SuperContext):
                 loc_sorting = SortingOrderLoc[self.ctx.locations_sorting]
 
                 def get_location_key(key: int) -> str:
-                    return self.ctx.get_location_sorting_key_by_id(key)
+                    return self.ctx.get_sorting_key_by_id(key, is_item=False)
 
                 if abs(loc_sorting) == SortingOrderLoc.alphabetical:
                     for category in self.listed_locations:
@@ -897,17 +896,27 @@ class ManualContext(SuperContext):
                 tracker_panel = TreeView(root_options=dict(text="Items Received (%d)" % (items_length)), size_hint_y=None)
                 tracker_panel.bind(minimum_height=tracker_panel.setter('height'))
 
-                def get_category_key(key: str) -> str:
+                def get_item_category_key(key: str) -> str:
                     return self.ctx.get_category_sorting_key_by_name(key)
-                def category_nat_sort_key(key: str):
-                    result = natural_sort_key(get_category_key(key))
+                def item_category_normal_sort_key(key: str):
+                    result = [get_item_category_key(key)]
                     return [0 if key.lstrip().startswith("(") else 1] + result
+                def item_category_nat_sort_key(key: str):
+                    result = natural_sort_key(get_item_category_key(key))
+                    return [0 if key.lstrip().startswith("(") else 1] + result
+
                 # Sorting items categories
                 item_cat_sorting = SortingOrderCategories[self.ctx.item_categories_sorting]
                 if abs(item_cat_sorting) == SortingOrderCategories.natural:
-                    self.listed_items = {key: self.listed_items[key] for key in sorted(self.listed_items.keys(), key=category_nat_sort_key, reverse=item_cat_sorting < 0)}
+                    self.listed_items = {key: self.listed_items[key] for key in
+                                         sorted(self.listed_items.keys(),
+                                                key=item_category_nat_sort_key,
+                                                reverse=item_cat_sorting < 0)}
                 else:
-                    self.listed_items = {key: self.listed_items[key] for key in sorted(self.listed_items.keys(), key=get_category_key, reverse=item_cat_sorting < 0)}
+                    self.listed_items = {key: self.listed_items[key] for key in
+                                         sorted(self.listed_items.keys(),
+                                                key=item_category_normal_sort_key,
+                                                reverse=item_cat_sorting < 0)}
 
                 # Since items_received is not available on connect, don't bother building item labels here
                 for item_category in self.listed_items.keys():
@@ -931,10 +940,25 @@ class ManualContext(SuperContext):
 
                 # Sorting location categories
                 loc_cat_sorting = SortingOrderCategories[self.ctx.location_categories_sorting]
+
+                def get_location_category_key(key: str) -> str:
+                    return self.ctx.get_category_sorting_key_by_name(key, is_item=False)
+                def loc_category_normal_sort_key(key: str):
+                    result = [get_location_category_key(key)]
+                    return [0 if key.lstrip().startswith("(") else 1] + result
+                def loc_category_nat_sort_key(key: str):
+                    result = natural_sort_key(get_location_category_key(key))
+                    return [0 if key.lstrip().startswith("(") else 1] + result
                 if abs(loc_cat_sorting) == SortingOrderCategories.natural:
-                    self.listed_locations = {key: self.listed_locations[key] for key in sorted(self.listed_locations.keys(), key=category_nat_sort_key, reverse=loc_cat_sorting < 0)}
+                    self.listed_locations = {key: self.listed_locations[key] for key in
+                                             sorted(self.listed_locations.keys(),
+                                                    key=loc_category_nat_sort_key,
+                                                    reverse=loc_cat_sorting < 0)}
                 else:
-                    self.listed_locations = {key: self.listed_locations[key] for key in sorted(self.listed_locations.keys(), key=get_category_key, reverse=loc_cat_sorting < 0)}
+                    self.listed_locations = {key: self.listed_locations[key] for key in
+                                             sorted(self.listed_locations.keys(),
+                                                    key=loc_category_normal_sort_key,
+                                                    reverse=loc_cat_sorting < 0)}
 
                 for location_category in self.listed_locations.keys():
                     locations_in_category = len(self.listed_locations[location_category])
@@ -1093,7 +1117,7 @@ class ManualContext(SuperContext):
                                 item_sorting = SortingOrderItem[self.ctx.items_sorting]
                                 sorted_items_received = [i.item for i in self.ctx.items_received]
                                 def get_item_key(key: int) -> str:
-                                    return self.ctx.get_item_sorting_key_by_id(key)
+                                    return self.ctx.get_sorting_key_by_id(key, is_item=True)
 
                                 if abs(item_sorting) == SortingOrderItem.alphabetical:
                                     sorted_items_received = sorted(sorted_items_received,
